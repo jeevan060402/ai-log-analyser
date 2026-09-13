@@ -112,3 +112,37 @@ To enable them on any clone:
 Allows teams to inject custom logic into the analysis pipeline:
 * **`PreIngestHook`**: Inspects, enriches, or drops raw log payloads before clustering (e.g., token authentication, tenant tagging).
 * **`PostIncidentHook`**: Executes automated remediation actions upon incident creation (e.g., triggering `kubectl rollout undo` webhooks, opening Jira tickets).
+
+---
+
+## 🌟 Advanced Enterprise Capabilities
+
+### 1. Autonomous GitHub Pull Request Creation (`app/engine/remediation.py`)
+Closes the loop from incident detection to code remediation.
+* Synthesizes unified git diffs (e.g., adding composite indexes, adjusting database connection pools).
+* Prepares full SRE post-mortem markdown description with reproduction steps and rollback verification commands.
+* Calls GitHub API (`POST /repos/{owner}/{repo}/pulls`) with dry-run fallback.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/incidents/INC-DEMO/create-pr
+```
+
+### 2. Real-Time Server-Sent Events (SSE) Stream (`app/engine/streamer.py`)
+Eliminates dashboard polling with asynchronous pub/sub broadcast:
+* Streams `LOG_SURGE` (live ingress counters), `INCIDENT_UPDATED`, and `INCIDENT_RESOLVED` directly to frontend clients.
+* `GET /api/v1/alerts/stream`
+
+### 3. OpenTelemetry (OTel) Collector Ingestion (`app/core/otel_receiver.py`)
+Drop-in compatibility with enterprise observability stacks (OTel collector, FluentBit, Vector):
+* `POST /v1/logs` natively decodes standard OTel JSON Protobuf payloads, preserving Trace IDs, Span IDs, and resource metadata.
+
+### 4. Interactive "Chat With Logs" Copilot (`app/engine/copilot.py`)
+Ask operational questions in plain English and receive grounded answers with exact clickable line citations:
+```bash
+curl -X POST http://localhost:8000/api/v1/copilot/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Why did checkout customer orders encounter timeout?"}'
+```
+
+### 5. Partitioned Parquet Cold Archival (`app/engine/parquet_archive.py`)
+Automatically partitions normalized logs by service and date (`data/parquet/service=.../date=.../`), queryable by DuckDB for historical analysis with near-zero memory footprint.

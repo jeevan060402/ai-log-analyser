@@ -1,0 +1,14 @@
+2026-09-13T14:00:01.102Z INFO [checkout-api] Received checkout request for cart_id=c_99812 customer_id=u_88192
+2026-09-13T14:00:01.150Z INFO [cart-svc] Validating items for cart_id=c_99812 inventory check OK
+2026-09-13T14:00:02.010Z INFO [payment-gateway] Authorizing charge $129.50 via stripe_token=tok_visa
+2026-09-13T14:00:02.890Z WARN [checkout-db] Connection pool acquisition latency elevated: 850ms (active=28/30)
+2026-09-13T14:00:03.410Z ERROR [checkout-db] Connection to 10.0.1.15:5432 timed out after 30s acquiring pool connection (retry #1)
+2026-09-13T14:00:03.412Z ERROR [checkout-db] Connection to 10.0.1.19:5432 timed out after 30s acquiring pool connection (retry #1)
+2026-09-13T14:00:03.415Z ERROR [checkout-db] Connection to 10.0.1.42:5432 timed out after 30s acquiring pool connection (retry #2)
+2026-09-13T14:00:03.501Z FATAL [checkout-db] FATAL: remaining connection slots are reserved for non-replication superuser connections
+2026-09-13T14:00:03.620Z ERROR [checkout-api] Failed to process order: 504 Gateway Timeout downstream dependency checkout-db
+2026-09-13T14:00:03.710Z ERROR [payment-gateway] Payment worker thread starvation: unable to persist transaction state
+2026-09-13T14:00:04.011Z ERROR [checkout-db] Connection to 10.0.2.88:5432 timed out after 30s acquiring pool connection (retry #1)
+2026-09-13T14:00:04.015Z ERROR [checkout-db] Connection to 10.0.2.91:5432 timed out after 30s acquiring pool connection (retry #2)
+2026-09-13T14:00:04.120Z ERROR [cart-svc] Session state sync timeout connecting to checkout-api
+2026-09-13T14:00:05.002Z ERROR [checkout-db] Connection to 10.0.3.14:5432 timed out after 30s acquiring pool connection (retry #3)

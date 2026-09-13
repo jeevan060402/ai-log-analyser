@@ -1,0 +1,9 @@
+2026-09-13 14:15:00 [ingress-nginx] 192.168.1.100 - - "GET /api/v1/health HTTP/1.1" 200 15 "-" "kube-probe/1.28"
+2026-09-13 14:15:05 [auth-service] INFO Started session verification worker pod auth-service-78f9bc-xk912
+2026-09-13 14:15:10 [auth-service] ERROR java.lang.OutOfMemoryError: Java heap space
+2026-09-13 14:15:11 [kubelet] WARNING Liveness probe failed: HTTP probe failed with statuscode: 503
+2026-09-13 14:15:12 [kubelet] ERROR Container auth-service in pod auth-service-78f9bc-xk912 failed liveness probe, will be restarted
+2026-09-13 14:15:14 [ingress-nginx] 10.244.0.1 - - "POST /api/v1/auth/login HTTP/1.1" 502 182 "-" "Mozilla/5.0"
+2026-09-13 14:15:15 [ingress-nginx] 10.244.0.1 - - "POST /api/v1/auth/login HTTP/1.1" 502 182 "-" "Mozilla/5.0"
+2026-09-13 14:15:16 [ingress-nginx] 10.244.0.1 - - "POST /api/v1/auth/login HTTP/1.1" 502 182 "-" "Mozilla/5.0"
+2026-09-13 14:15:20 [kubelet] WARNING Back-off restarting failed container auth-service in pod auth-service-78f9bc-xk912

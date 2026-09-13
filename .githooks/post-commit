@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# GIT POST-COMMIT HOOK
+# ==============================================================================
+
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+COMMIT_HASH=$(git rev-parse --short HEAD)
+COMMIT_MSG=$(git log -1 --pretty=%B | head -n 1)
+
+echo -e "${GREEN}🎉 [Post-Commit Hook] Successfully committed [${COMMIT_HASH}]: \"${COMMIT_MSG}\"${NC}"
+echo -e "${CYAN}💡 Pre-push verification will automatically run regression tests when you execute 'git push'.${NC}"

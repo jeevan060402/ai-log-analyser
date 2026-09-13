@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# GIT PRE-PUSH HOOK: Automated Regression & Deduplication Test Runner
+# ==============================================================================
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}🚀 [Pre-Push Hook] Running automated test suite before pushing to GitHub...${NC}"
+
+# Check if Docker/OrbStack is running
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    echo "🐳 Running tests inside Docker container..."
+    docker run --rm -v "$(pwd)/backend:/app" ai-log-analyser:latest python3 -m pytest tests/ > /dev/null 2>&1 || {
+        echo -e "${RED}❌ [TEST FAILURE] Container tests failed! Push aborted.${NC}"
+        exit 1
+    }
+else
+    echo "🐍 Running tests using local Python..."
+    python3 -c "
+import sys, asyncio
+sys.path.append('backend')
+from tests.test_redactor import test_redact_sensitive_credentials
+from tests.test_deduplication import test_5000_logs_deduplicated_to_single_incident
+
+test_redact_sensitive_credentials()
+test_5000_logs_deduplicated_to_single_incident()
+" > /dev/null 2>&1 || {
+        echo -e "${RED}❌ [TEST FAILURE] Local test suite failed! Push aborted.${NC}"
+        exit 1
+    }
+fi
+
+echo -e "${GREEN}✅ [Pre-Push Hook] All tests passed! Proceeding with git push.${NC}"
+exit 0

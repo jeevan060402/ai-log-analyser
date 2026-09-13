@@ -1,0 +1,15 @@
+services:
+  ai-log-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-log-analyser-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount local backend directory for live editing without rebuild
+      - ./backend:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+    restart: unless-stopped

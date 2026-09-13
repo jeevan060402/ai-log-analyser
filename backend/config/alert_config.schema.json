@@ -1,0 +1,377 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AlertingProjectConfig",
+  "description": "Project Tuning configuration schema for the AI Log Analyser alerting and triage platform.",
+  "type": "object",
+  "required": ["version", "project_id", "routing_rules"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["v1", "v1.1", "v2.0-preview"],
+      "description": "Configuration schema version."
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-_]+$",
+      "description": "Unique identifier for the project or service boundary."
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-friendly project title displayed in alerts and UI."
+    },
+    "owner_team": {
+      "type": "string",
+      "description": "Owning team handle or email."
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["production", "staging", "development", "canary", "all"],
+      "default": "production"
+    },
+    "ai_triage": {
+      "type": "object",
+      "description": "AI-driven triage, clustering, and diagnostic synthesis engine settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "model": {
+          "type": "string",
+          "enum": ["gemini-2.0-flash", "gemini-1.5-pro", "claude-3-5-sonnet", "gpt-4o"],
+          "default": "gemini-2.0-flash"
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.8,
+          "description": "Minimum confidence required to automatically label root cause and assign high severity."
+        },
+        "grouping_window_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 600,
+          "default": 60,
+          "description": "Time window to buffer and cluster cascading logs before firing a synthesized incident notification."
+        },
+        "max_cascade_wait_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 900,
+          "default": 180,
+          "description": "Max time to wait for a cascading storm to stabilize before pushing intermediate alert."
+        },
+        "auto_root_cause_analysis": {
+          "type": "boolean",
+          "default": true
+        },
+        "blast_radius_detection": {
+          "type": "boolean",
+          "default": true
+        },
+        "remediation_suggestions": {
+          "type": "boolean",
+          "default": true
+        },
+        "mask_pii_before_llm": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "suppression_rules": {
+      "type": "object",
+      "description": "Rules for quieting noise, maintenance blackouts, and benign error ignoring.",
+      "properties": {
+        "maintenance_windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MaintenanceWindow"
+          }
+        },
+        "benign_errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/BenignErrorFilter"
+          }
+        },
+        "rate_limiting": {
+          "$ref": "#/definitions/RateLimiting"
+        },
+        "flapping_protection": {
+          "$ref": "#/definitions/FlappingProtection"
+        }
+      },
+      "additionalProperties": false
+    },
+    "severity_rules": {
+      "type": "array",
+      "description": "Dynamic severity elevation rules based on log attributes, volume, or AI assessment.",
+      "items": {
+        "$ref": "#/definitions/SeverityRule"
+      }
+    },
+    "routing_rules": {
+      "type": "array",
+      "description": "Routing criteria to channel incident notifications.",
+      "items": {
+        "$ref": "#/definitions/RoutingRule"
+      }
+    },
+    "escalation_policies": {
+      "type": "array",
+      "description": "Time-based escalation steps for unacknowledged incidents.",
+      "items": {
+        "$ref": "#/definitions/EscalationPolicy"
+      }
+    },
+    "channels": {
+      "type": "object",
+      "description": "Definitions for notification channel destinations.",
+      "additionalProperties": {
+        "$ref": "#/definitions/ChannelConfig"
+      }
+    }
+  },
+  "definitions": {
+    "MaintenanceWindow": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "cron_schedule": { "type": "string", "description": "Standard cron expression for recurring windows." },
+        "duration_minutes": { "type": "integer", "minimum": 1 },
+        "start_time": { "type": "string", "format": "date-time" },
+        "end_time": { "type": "string", "format": "date-time" },
+        "timezone": { "type": "string", "default": "UTC" },
+        "services_affected": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Empty array or ['*'] applies to entire project."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["DROP_SILENTLY", "ARCHIVE_WITHOUT_NOTIFY", "DIGEST_SUMMARY_ON_COMPLETION"],
+          "default": "ARCHIVE_WITHOUT_NOTIFY"
+        }
+      },
+      "additionalProperties": false
+    },
+    "BenignErrorFilter": {
+      "type": "object",
+      "required": ["id", "pattern"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "reason": { "type": "string" },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern matched against raw log message, stacktrace, or normalized template."
+        },
+        "match_field": {
+          "type": "string",
+          "enum": ["message", "stack_trace", "logger_name", "error_code", "any"],
+          "default": "message"
+        },
+        "service": { "type": "string", "default": "*" },
+        "max_burst_per_minute": {
+          "type": "integer",
+          "description": "If occurrences exceed this threshold, alert anyway (safety fallback)."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Temporary snooze expiry date (e.g. during active bugfix deploy)."
+        },
+        "jira_or_github_ref": {
+          "type": "string",
+          "description": "Link to bug tracking ticket explaining benign status."
+        }
+      },
+      "additionalProperties": false
+    },
+    "RateLimiting": {
+      "type": "object",
+      "properties": {
+        "max_alerts_per_channel_hour": { "type": "integer", "default": 20 },
+        "burst_window_seconds": { "type": "integer", "default": 300 },
+        "overflow_action": {
+          "type": "string",
+          "enum": ["SUPPRESS_AND_DIGEST", "DROP_LOW_PRIORITY"],
+          "default": "SUPPRESS_AND_DIGEST"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FlappingProtection": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "transition_threshold": {
+          "type": "integer",
+          "default": 3,
+          "description": "State changes within window that classify alert as flapping."
+        },
+        "evaluation_window_minutes": { "type": "integer", "default": 15 },
+        "action": {
+          "type": "string",
+          "enum": ["LOCK_FIRING_UNTIL_MANUAL_RESET", "EXTEND_RESOLVE_DELAY"],
+          "default": "EXTEND_RESOLVE_DELAY"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SeverityRule": {
+      "type": "object",
+      "required": ["severity", "conditions"],
+      "properties": {
+        "severity": {
+          "type": "string",
+          "enum": ["P0_CRITICAL", "P1_HIGH", "P2_MEDIUM", "P3_LOW", "P4_INFO"]
+        },
+        "conditions": {
+          "type": "object",
+          "properties": {
+            "error_rate_per_min": { "type": "number" },
+            "log_levels": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["FATAL", "ERROR", "WARN", "INFO"] }
+            },
+            "impacted_services_count": { "type": "integer" },
+            "ai_confidence_gt": { "type": "number" },
+            "has_stack_trace": { "type": "boolean" },
+            "tags": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "RoutingRule": {
+      "type": "object",
+      "required": ["id", "channels"],
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "match": {
+          "type": "object",
+          "properties": {
+            "severities": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["P0_CRITICAL", "P1_HIGH", "P2_MEDIUM", "P3_LOW", "P4_INFO"] }
+            },
+            "services": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "environments": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "root_cause_categories": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "DATABASE_CONNECTION_EXHAUSTION",
+                  "DATABASE_DEADLOCK",
+                  "NETWORK_TIMEOUT_CASCADE",
+                  "OUT_OF_MEMORY",
+                  "AUTH_PROVIDER_OUTAGE",
+                  "RATE_LIMIT_EXCEEDED",
+                  "CONFIG_PARSING_ERROR",
+                  "DISK_SPACE_EXHAUSTION",
+                  "UPSTREAM_DEPENDENCY_5XX",
+                  "UNKNOWN_ANOMALY"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "channels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of channel keys defined under 'channels'."
+        },
+        "template": {
+          "type": "string",
+          "enum": ["rich_ai_interactive", "slack_compact", "pagerduty_brief", "json_raw"],
+          "default": "rich_ai_interactive"
+        },
+        "escalation_policy": {
+          "type": "string",
+          "description": "ID of escalation policy to apply if incident remains unacknowledged."
+        }
+      },
+      "additionalProperties": false
+    },
+    "EscalationPolicy": {
+      "type": "object",
+      "required": ["id", "steps"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["wait_minutes", "notify_channels"],
+            "properties": {
+              "wait_minutes": { "type": "integer", "minimum": 0 },
+              "notify_channels": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "elevate_severity_to": {
+                "type": "string",
+                "enum": ["P0_CRITICAL", "P1_HIGH"]
+              },
+              "mention_groups": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "auto_resolve_timeout_minutes": {
+          "type": "integer",
+          "default": 30,
+          "description": "If no new error logs match the incident cluster within this duration, auto-resolve."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ChannelConfig": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["slack", "discord", "pagerduty", "opsgenie", "webhook", "email"]
+        },
+        "endpoint_secret_env": {
+          "type": "string",
+          "description": "Name of environment variable storing the webhook URL or API token."
+        },
+        "channel_name": { "type": "string" },
+        "ping_targets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "interactive_actions_enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

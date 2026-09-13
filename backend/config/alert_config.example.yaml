@@ -1,0 +1,224 @@
+# ==============================================================================
+# AI LOG ANALYSER: PROJECT TUNING PROFILE (ALERT CONFIGURATION)
+# File: alert_config.yaml
+# Schema: alert_config.schema.json
+# ==============================================================================
+version: "v1"
+project_id: "checkout-payments-prod"
+display_name: "Payments & Checkout Gateway (Production)"
+owner_team: "core-payments-infra"
+environment: "production"
+
+# ------------------------------------------------------------------------------
+# 1. AI TRIAGE & DIAGNOSTIC SYNTHESIS ENGINE
+# ------------------------------------------------------------------------------
+ai_triage:
+  enabled: true
+  model: "gemini-2.0-flash"
+  confidence_threshold: 0.85           # Auto-label root cause & trigger high-sev only if confidence >= 85%
+  grouping_window_seconds: 60          # Slide buffer to group cascading microservice logs
+  max_cascade_wait_seconds: 180        # Max duration to wait for storm peak before firing synthesis
+  auto_root_cause_analysis: true       # Generate natural language diagnostic hypothesis
+  blast_radius_detection: true         # Trace dependency graph across services
+  remediation_suggestions: true        # Attach verified runbook commands or rollback steps
+  mask_pii_before_llm: true            # Redact credit cards, JWTs, emails before model inference
+
+# ------------------------------------------------------------------------------
+# 2. SUPPRESSION & NOISE-DAMPENING RULES
+# ------------------------------------------------------------------------------
+suppression_rules:
+  # Scheduled Maintenance Windows
+  maintenance_windows:
+    - id: "maint-weekly-db-reindex"
+      name: "Weekly Aurora PostgreSQL VACUUM & Reindex"
+      cron_schedule: "0 2 * * SUN"      # Every Sunday at 02:00 UTC
+      duration_minutes: 90
+      timezone: "UTC"
+      services_affected:
+        - "checkout-db"
+        - "ledger-service"
+      action: "ARCHIVE_WITHOUT_NOTIFY"   # Logs are indexed but no alerts dispatched
+
+    - id: "maint-q3-major-upgrade"
+      name: "Payment Gateway v3.4 Cutover Migration"
+      start_time: "2026-10-01T01:00:00Z"
+      end_time: "2026-10-01T04:00:00Z"
+      services_affected: ["*"]
+      action: "DIGEST_SUMMARY_ON_COMPLETION"
+
+  # Known Benign Errors (Drop noisemakers & transient blips)
+  benign_errors:
+    - id: "benign-client-abort"
+      name: "Client Disconnect / HTTP 499 / Socket Broken Pipe"
+      reason: "Mobile clients disconnecting on flaky cellular connections before response stream finishes."
+      pattern: "(ClientAbortException|ECONNRESET|BrokenPipeException|Broken pipe)"
+      match_field: "message"
+      service: "*"
+      max_burst_per_minute: 2500       # If sudden spike > 2500/min, alert as potential DDoS
+      jira_or_github_ref: "INFRA-1092"
+
+    - id: "benign-k8s-kubelet-probe"
+      name: "Legacy Kubelet Probe 404"
+      reason: "Deprecated probe path polled by old node agent pending DaemonSet daemon rollout."
+      pattern: "GET /healthz/legacy 404"
+      match_field: "message"
+      service: "api-gateway"
+      expires_at: "2026-12-31T23:59:59Z"
+
+    - id: "benign-redis-cache-warmup"
+      name: "Redis Cache Miss During Node Startup"
+      reason: "Cold cache warm-up misses on newly provisioned pod replicas."
+      pattern: "CacheMissException: key 'catalog_v2:.*' not found in L2"
+      match_field: "message"
+      service: "catalog-service"
+      max_burst_per_minute: 1000
+
+  # Token-Bucket Rate Limiting (Prevent notification storms)
+  rate_limiting:
+    max_alerts_per_channel_hour: 15
+    burst_window_seconds: 300
+    overflow_action: "SUPPRESS_AND_DIGEST"
+
+  # Flapping Protection (Avoid alert toggle jitter)
+  flapping_protection:
+    enabled: true
+    transition_threshold: 3            # >=3 status shifts in 15m classifies alert as flapping
+    evaluation_window_minutes: 15
+    action: "EXTEND_RESOLVE_DELAY"
+
+# ------------------------------------------------------------------------------
+# 3. DYNAMIC SEVERITY CLASSIFICATION RULES
+# ------------------------------------------------------------------------------
+severity_rules:
+  - severity: "P0_CRITICAL"
+    conditions:
+      error_rate_per_min: 500
+      impacted_services_count: 3
+      ai_confidence_gt: 0.85
+      log_levels: ["FATAL", "ERROR"]
+      tags:
+        tier: "tier-0-core"
+
+  - severity: "P1_HIGH"
+    conditions:
+      error_rate_per_min: 100
+      impacted_services_count: 1
+      ai_confidence_gt: 0.80
+      log_levels: ["ERROR"]
+
+  - severity: "P2_MEDIUM"
+    conditions:
+      error_rate_per_min: 25
+      log_levels: ["WARN", "ERROR"]
+
+# ------------------------------------------------------------------------------
+# 4. ROUTING & DISPATCH RULES
+# ------------------------------------------------------------------------------
+routing_rules:
+  # Critical Payment Failures & DB Cascades -> War Room & PagerDuty
+  - id: "route-critical-db-payments"
+    description: "P0 payment outages and database pool crashes dispatch immediately to Slack War Room and PagerDuty."
+    match:
+      severities: ["P0_CRITICAL"]
+      root_cause_categories:
+        - "DATABASE_CONNECTION_EXHAUSTION"
+        - "DATABASE_DEADLOCK"
+        - "NETWORK_TIMEOUT_CASCADE"
+        - "AUTH_PROVIDER_OUTAGE"
+      services:
+        - "checkout-api"
+        - "payment-gateway"
+        - "order-processor"
+    channels:
+      - "slack_war_room"
+      - "pagerduty_sev0"
+      - "incident_webhook"
+    template: "rich_ai_interactive"
+    escalation_policy: "escalation-p0-payments"
+
+  # High Severity Service Anomalies -> Primary Engineering Channel
+  - id: "route-high-sev-service"
+    description: "P1 issues routed to team Slack and Discord feeds."
+    match:
+      severities: ["P1_HIGH"]
+      environments: ["production", "canary"]
+    channels:
+      - "slack_payments_team"
+      - "discord_eng_feed"
+    template: "rich_ai_interactive"
+    escalation_policy: "escalation-p1-standard"
+
+  # Low / Medium Warnings -> Digest Feed
+  - id: "route-medium-warnings"
+    description: "P2 and P3 issues sent to low-priority channel with compact summary."
+    match:
+      severities: ["P2_MEDIUM", "P3_LOW"]
+    channels:
+      - "slack_payments_team"
+    template: "slack_compact"
+
+# ------------------------------------------------------------------------------
+# 5. ESCALATION POLICIES
+# ------------------------------------------------------------------------------
+escalation_policies:
+  - id: "escalation-p0-payments"
+    name: "P0 Critical Payments Escalation Tier"
+    steps:
+      - wait_minutes: 0                # Immediate
+        notify_channels: ["slack_war_room", "pagerduty_sev0"]
+        mention_groups: ["@oncall-payments", "@incident-commander"]
+
+      - wait_minutes: 10               # If unacknowledged after 10 mins
+        notify_channels: ["pagerduty_sev0", "slack_war_room"]
+        elevate_severity_to: "P0_CRITICAL"
+        mention_groups: ["@channel", "@payments-secondary-oncall"]
+
+      - wait_minutes: 25               # If unacknowledged after 25 mins
+        notify_channels: ["slack_war_room", "incident_webhook"]
+        mention_groups: ["@vp-engineering", "@director-infrastructure"]
+
+    auto_resolve_timeout_minutes: 15   # Auto-resolve if 0 matching errors for 15 consecutive minutes
+
+  - id: "escalation-p1-standard"
+    name: "P1 Standard Team Escalation"
+    steps:
+      - wait_minutes: 0
+        notify_channels: ["slack_payments_team"]
+        mention_groups: ["@oncall-payments"]
+      - wait_minutes: 30
+        notify_channels: ["pagerduty_sev0"]
+        mention_groups: ["@payments-lead"]
+    auto_resolve_timeout_minutes: 30
+
+# ------------------------------------------------------------------------------
+# 6. CHANNEL DESTINATIONS
+# ------------------------------------------------------------------------------
+channels:
+  slack_war_room:
+    type: "slack"
+    endpoint_secret_env: "SLACK_WAR_ROOM_WEBHOOK_URL"
+    channel_name: "#war-room-checkout-sev0"
+    ping_targets: ["@oncall-payments", "@incident-commander"]
+    interactive_actions_enabled: true
+
+  slack_payments_team:
+    type: "slack"
+    endpoint_secret_env: "SLACK_PAYMENTS_WEBHOOK_URL"
+    channel_name: "#alerts-payments-eng"
+    interactive_actions_enabled: true
+
+  discord_eng_feed:
+    type: "discord"
+    endpoint_secret_env: "DISCORD_INCIDENTS_WEBHOOK_URL"
+    channel_name: "#live-incidents"
+    interactive_actions_enabled: false
+
+  pagerduty_sev0:
+    type: "pagerduty"
+    endpoint_secret_env: "PAGERDUTY_SEV0_INTEGRATION_KEY"
+    interactive_actions_enabled: true
+
+  incident_webhook:
+    type: "webhook"
+    endpoint_secret_env: "INCIDENT_BRIDGE_WEBHOOK_URL"
+    interactive_actions_enabled: false

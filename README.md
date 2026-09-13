@@ -91,3 +91,24 @@ ai-log-analyser/
 
 ## 🏆 60-Second Hackathon Winning Demo
 See [DEMO_FLOW_60S.md](DEMO_FLOW_60S.md) for the theatrical script, visual cues, and presenter voiceover to win judges in 1 minute.
+
+---
+
+## 🪝 Pre and Post Hooks
+
+### 1. Git Workflow Hooks (`.githooks/`)
+Version-controlled Git hooks ensure zero-leak security and prevent breaking commits:
+* **`pre-commit`**: Scans staged files for unredacted credentials (Stripe live keys, JWTs, private keys) and verifies Python syntax across all modified files before allowing a commit.
+* **`post-commit`**: Logs commit hash summary and reminds developers of pre-push test gating.
+* **`pre-push`**: Automatically spins up the container test suite (`pytest tests/`) to ensure all deduplication and sanitization tests pass before pushing code to GitHub.
+
+To enable them on any clone:
+```bash
+./scripts/setup-hooks.sh
+# Sets git config core.hooksPath .githooks
+```
+
+### 2. Application Extensibility Hooks (`backend/app/engine/hooks.py`)
+Allows teams to inject custom logic into the analysis pipeline:
+* **`PreIngestHook`**: Inspects, enriches, or drops raw log payloads before clustering (e.g., token authentication, tenant tagging).
+* **`PostIncidentHook`**: Executes automated remediation actions upon incident creation (e.g., triggering `kubectl rollout undo` webhooks, opening Jira tickets).
